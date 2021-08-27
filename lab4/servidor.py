@@ -20,13 +20,29 @@ def initserver():
     sock.listen(5)
     return sock
 
-def requestloop(username, sock, address, queue):
+def requestloop(sock, address):
+        username = sock.recv(1024).decode("utf-8")  # Cliente precisa indicar seu username ao servidor
+        if not username:
+            sock.close()
+            return
+
+        if username not in connected_users:
+            sock.send("username_ok".encode("utf-8"))            # Username disponível
+            new_queue = queue.Queue()                           # Cria fila interna
+            connected_users[username] = {"status": "active", "queue": new_queue, "address": address}   # Atualiza mapa de users conectados
+        else:   # Username indisponível
+                print (f"Endereço {address} tentou se conectar mas o username \"{username}\" estava indisponível")
+                sock.send("username_unavailable".encode("utf-8"))
+                sock.close()
+                return
+
         while True:
-            if not queue.empty():
-                msg_content = queue.get()
+            if not new_queue.empty():
+                msg_content = new_queue.get()
+                print(f"Enviei \"{msg_content}\" ao {username}")
                 sock.send(msg_content.encode('utf-8'))
             else:
-                r, _, _ = select.select([sock], [], [])
+                r, _, _ = select.select([sock], [], [], 0.2)
                 for ready in r:
                     msg = ready.recv(1024).decode("utf-8")
                     if not msg: # Cliente usou /quit
@@ -40,6 +56,7 @@ def requestloop(username, sock, address, queue):
                     else:
                         # Separa a mensagem em arquivo a ser aberto e palavra a ser buscada
                         if msg == "/offline":
+                            connected_users[username]["queue"].queue.clear()
                             connected_users[username]["status"] = "inactive"
 
                         elif msg == "/online":
@@ -49,10 +66,11 @@ def requestloop(username, sock, address, queue):
                             ready.send(",".join(connected_users.keys()).encode('utf-8'))
 
                         elif msg[0] == ">":
-                            user, msg_content = msg[1:].split("-", 1)           # Separa username e mensagem
+                            dest, msg_content = msg[1:].split("-", 1)           # Separa username e mensagem
+                            print(f"{username}->{dest}: {msg_content}")
 
-                            if user in connected_users and connected_users[user]["status"] == "active":
-                                connected_users[user]["queue"].put(f"<{user}: {msg_content}")
+                            if dest in connected_users and connected_users[dest]["status"] == "active":
+                                connected_users[dest]["queue"].put(f"<{username}: {msg_content}")
                                 ready.send("msg_ok".encode('utf-8'))            # Dá o ok ao cliente
 
                             else:
@@ -64,8 +82,8 @@ def main():
     sock = initserver()
     entradas.append(sock)
     global connected_users
-    connected_users = dict()             # Lista de clientes
-    thread_list = []                     # Lista de threads
+    connected_users = dict()    # Lista de clientes
+    thread_list = []            # Lista de threads
 
     while True:
         # Se nenhuma conexão existe, utiliza select para realizar a próxima ação, podendo ser
@@ -74,26 +92,13 @@ def main():
         for ready in r:
             if ready == sock:
                 novoSock, endereco = sock.accept()              # Retorna um novo socket e o endereco do par conectado
-                username = novoSock.recv(1024).decode("utf-8")  # Cliente precisa indicar seu username ao servidor
-                if not username:
-                    novoSock.close()
-                    continue
+                print (f"Conectado com {endereco}")
 
-                if username not in connected_users:
-                    novoSock.send("username_ok".encode("utf-8"))        # Username disponível
-                    new_queue = queue.Queue()                           # Cria fila interna
-                    connected_users[username] = {"status": "active", "queue": new_queue, "address": endereco}   # Atualiza mapa de users conectados
-                    print (f"Conectado com {endereco}, username {username}")
+                # Cria uma thread, chamando a func. requestloop() com os args
+                client = threading.Thread(target=requestloop, args=(novoSock, endereco))                
+                client.start()                  # Inicia a exec. da thread
+                thread_list.append(client)      # Guarda a ref. da thread na lista de clientes
 
-                    # Cria uma thread, chamando a func. requestloop() com os args
-                    client = threading.Thread(target=requestloop, args=(username, novoSock, endereco, new_queue))                
-                    client.start()                  # Inicia a exec. da thread
-                    thread_list.append(client)      # Guarda a ref. da thread na lista de clientes
-                else:   # Username indisponível
-                    print (f"Endereço {endereco} tentou se conectar mas o username \"{username}\" estava indisponível")
-                    novoSock.send("username_unavailable".encode("utf-8"))
-                    novoSock.close()
-                
             else: # ready == sys.stdin
                 cmd = input()
                 # Caso o comando digitado seja "exit", encerra a exec. do servidor
@@ -107,5 +112,5 @@ def main():
 
                 if cmd == "list":
                     for user in connected_users:
-                        print(f"{username}: {connected_users[user]}")
+                        print(f"{user}: {connected_users[user]}")
 main()

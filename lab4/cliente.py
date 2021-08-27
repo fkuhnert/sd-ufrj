@@ -1,4 +1,6 @@
 import socket
+import select
+import sys
 
 HOST = 'localhost' # maquina onde esta o par passivo
 PORTA = 5000       # porta que o par passivo esta escutando
@@ -7,37 +9,60 @@ PORTA = 5000       # porta que o par passivo esta escutando
 sock = socket.socket() # default: socket.AF_INET, socket.SOCK_STREAM 
 
 # conecta-se com o par passivo
-sock.connect((HOST, PORTA)) 
+sock.connect((HOST, PORTA))
 
-while True:
-    arquivo = ""
-    # Não permite o usuário de tentar enviar uma string vazia
-    while arquivo == "":
-        arquivo = input("Digite o nome do arquivo de texto (ou \"exit\" para sair): ")
-    
-    palavra = ""
-    if arquivo != "exit":
-        while palavra == "":
-            palavra = input("Digite a palavra a ser buscada: ")
-        print() # Print vazio para melhorar visibilidade
-    
-    # Se o nome do arquivo for "exit", fecha a conexão e encerra o programa
-    if arquivo == "exit":
-        sock.close()
-        break
-
+user_ok = False
+while not user_ok:
+    username = input("Insira o seu username: ")
+    if not len(username): continue
+    if " " in username or "-" in username:
+        print("Username não pode conter espaços ou hífens. Tente novamente.")
+        continue
+    sock.send(username.encode("utf-8"))
+    result = sock.recv(1024).decode("utf-8")
+    if result == "username_ok":
+        print("Conectado com sucesso.")
+        user_ok = True
     else:
-        # Envio da mensagem ao servidor
-        mensagem = f"{arquivo}/{palavra}".encode('utf-8')
-        sock.send(mensagem)
+        print("Username já está em uso. Tente novamente.")
 
-        # Recebimento da resposta do servidor
-        response = sock.recv(1024).decode('utf-8')
+entradas = [sys.stdin, sock]
+status = "active"
+while True:
+    r, _, _ = select.select(entradas, [], [], 0.5)
+    for ready in r:
+        if ready == sock:
+            msg = ready.recv(1024).decode("utf-8")
+            print(msg)
+        elif ready == sys.stdin: # stdin
+            cmd = input()
+            if not len(cmd): continue
 
-        # Tratamento e exibição da mensagem ao usuário
-        if "erro" in response:
-            print("O arquivo solicitado não foi encontrado no servidor.")
-        else:
-            vez_str = "vez" if int(response) == 1 else "vezes"
-            print(f"A palavra \"{palavra}\" foi encontrada {response} {vez_str}.")
-        print()
+            # Comando que lista usuários
+            if cmd == "/list":
+                sock.send("/list".encode("utf-8"))
+                user_list = sock.recv(1024).decode("utf-8")
+                print(user_list)
+
+            # Comando para ficar inativo
+            elif cmd == "/offline":
+                sock.send("/offline".encode("utf-8"))
+                status = "inactive"
+
+            # Comando para ficar ativo
+            elif cmd == "/online":
+                sock.send("/online".encode("utf-8"))
+                status = "active"
+
+            elif cmd == "/quit":
+                sock.close()
+                sys.exit()
+
+            elif cmd[0] == ">" and status == "active":
+                sock.send(cmd.replace(" ", "-", 1).encode("utf-8"))
+                result = sock.recv(1024).decode("utf-8")
+                if result != "msg_ok":
+                    print(f"Erro: {result}")
+                    print("Usuário não está disponível ou não existe")
+            elif cmd[0] == ">" and status == "inactive":
+                print("Você não pode enviar mensagens enquanto estiver inativo.")
