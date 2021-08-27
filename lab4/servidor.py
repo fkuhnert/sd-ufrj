@@ -21,20 +21,22 @@ def initserver():
     return sock
 
 def requestloop(sock, address):
-        username = sock.recv(1024).decode("utf-8")  # Cliente precisa indicar seu username ao servidor
-        if not username:
-            sock.close()
-            return
-
-        if username not in connected_users:
-            sock.send("username_ok".encode("utf-8"))            # Username disponível
-            new_queue = queue.Queue()                           # Cria fila interna
-            connected_users[username] = {"status": "active", "queue": new_queue, "address": address}   # Atualiza mapa de users conectados
-        else:   # Username indisponível
-                print (f"Endereço {address} tentou se conectar mas o username \"{username}\" estava indisponível")
-                sock.send("username_unavailable".encode("utf-8"))
+        while True:
+            username = sock.recv(1024).decode("utf-8")  # Cliente precisa indicar seu username ao servidor
+            if not username:
                 sock.close()
                 return
+
+            if username not in connected_users:
+                sock.send("username_ok".encode("utf-8"))            # Username disponível
+                new_queue = queue.Queue()                           # Cria fila interna
+                connected_users[username] = {"status": "active", "queue": new_queue, "address": address}   # Atualiza mapa de users conectados
+                print(f"{address} conectou com nome de usuário: {username}")
+                break
+
+            else:   # Username indisponível
+                print (f"Endereço {address} tentou se conectar mas o username \"{username}\" estava indisponível")
+                sock.send("username_unavailable".encode("utf-8"))
 
         while True:
             if not new_queue.empty():
@@ -58,19 +60,25 @@ def requestloop(sock, address):
                         if msg == "/offline":
                             connected_users[username]["queue"].queue.clear()
                             connected_users[username]["status"] = "inactive"
+                            print(f"User {username} agora está inativo")
 
                         elif msg == "/online":
                             connected_users[username]["status"] = "active"
+                            print(f"User {username} agora está ativo")
 
                         elif msg == "/list":
-                            ready.send(",".join(connected_users.keys()).encode('utf-8'))
+                            user_list = []
+                            for user in connected_users.keys():
+                                if connected_users[user]["status"] == "active":
+                                    user_list.append(user)
+                            ready.send(str(user_list).encode('utf-8'))
 
                         elif msg[0] == ">":
                             dest, msg_content = msg[1:].split("-", 1)           # Separa username e mensagem
                             print(f"{username}->{dest}: {msg_content}")
 
                             if dest in connected_users and connected_users[dest]["status"] == "active":
-                                connected_users[dest]["queue"].put(f"<{username}: {msg_content}")
+                                connected_users[dest]["queue"].put(f"{username}: {msg_content}")
                                 ready.send("msg_ok".encode('utf-8'))            # Dá o ok ao cliente
 
                             else:
