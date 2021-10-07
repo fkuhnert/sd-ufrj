@@ -6,8 +6,27 @@ from shutil import get_terminal_size
 from datetime import datetime
 from math import ceil, floor
 
+def printJsonAsArticle(info):
+    # Formatação de mensagem para printar JSONs bonitinhos
+    counter = 0
+    width, _ = get_terminal_size()     #Tamanhos do terminal para formatação
+    for label in info:
+        tam = ((width - (len(label)+4))/2)
+        size = width-4
+        if counter == 0:
+            print(f'┏{"━"*(floor(tam))} {label} {"━"*ceil(tam)}┓')
+        else:
+            print(f'┣{"━"*(floor(tam))} {label} {"━"*ceil(tam)}┫')
+        iterations = ceil(len(info[label])/size)
+        for i in range(iterations):
+            sliced_msg = info[label][size*i:size*(i+1)]
+            print(f"┃ {sliced_msg.strip()}{' '*(size-len(sliced_msg.strip()))} ┃")
+        counter += 1
+    print(f'┗{"━"*(width-2)}┛')
+    print()
+
 HOST = 'localhost' # maquina onde esta o par passivo
-PORTA = 5001       # porta que o par passivo esta escutando
+PORTA = 5000       # porta que o par passivo esta escutando
 
 # cria socket
 sock = socket.socket() # default: socket.AF_INET, socket.SOCK_STREAM 
@@ -26,28 +45,16 @@ while True:
             for msg in msgs:
                 if len(msg):
                     if msg[0] == "{":
-                        # Noticia com JSON
-                        info = json.loads(msg)
-
-                        width, _ = get_terminal_size()     #Tamanhos do terminal para formatação
-                        
-                        counter = 0
-                        for label in info:
-                            tam = ((width - (len(label)+4))/2)
-                            size = width-4
-                            if counter == 0:
-                                print(f'┏{"━"*(floor(tam))} {label} {"━"*ceil(tam)}┓')
-                            else:
-                                print(f'┣{"━"*(floor(tam))} {label} {"━"*ceil(tam)}┫')
-                            iterations = ceil(len(info[label])/size)
-                            for i in range(iterations):
-                                sliced_msg = info[label][size*i:size*(i+1)]
-                                print(f"┃ {sliced_msg.strip()}{' '*(size-len(sliced_msg.strip()))} ┃")
-                            counter += 1
-                        print(f'┗{"━"*(width-2)}┛')
-                        print()
+                        # Noticia com JSON, exemplo de caso de uso
+                        try:
+                            info = json.loads(msg)
+                            printJsonAsArticle(info) # Função para printar JSONs como se fosse um artigo
+                        except:
+                            # Fallback caso não seja um JSON válido
+                            print(f"{now.hour:02d}:{now.minute:02d}:{now.second:02d} {msg}")
                     else:
-                        print(msg)
+                        # Mensagem normal
+                        print(f"{now.hour:02d}:{now.minute:02d}:{now.second:02d} {msg}")
 
         elif ready == sys.stdin:
             cmd = input()
@@ -77,10 +84,12 @@ while True:
                     continue
 
                 sock.send(cmd.replace(" ", "-", 1).encode("utf-8"))
+                print(f'Mensagem publicada no tópico "{cmd[1:].split(" ", 1)[0]}" com sucesso.')
 
             elif cmd[0] == "+" or cmd[0] == "-":
                 name = cmd[1:]
                 if len(name):
                     sock.send(cmd.encode('utf-8'))
+                    print(f'{"Inscrito" if cmd[0] == "+" else "Desinscrito"} no tópico "{cmd[1:]}" com sucesso.')
                 else:
                     print("Você deve escrever o nome do tópico após o +/-")

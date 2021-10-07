@@ -8,7 +8,7 @@ import sys
 import threading
 
 HOST = ''     # '' possibilita acessar qualquer endereco alcancavel da maquina local
-PORTA = 5001  # porta onde chegarao as mensagens para essa aplicacao
+PORTA = 5000  # porta onde chegarao as mensagens para essa aplicacao
 
 def initserver():
     # cria um socket para comunicacao
@@ -121,8 +121,14 @@ def main():
                 if cmd == "topics":
                     print(", ".join(topic_lists.keys()))
 
+                if cmd[:9] == "broadcast":
+                    _, message = cmd.split(" ", 1)
+                    print("Realizando broadcast de mensagem a todos os tópicos.")
+                    for name in topic_lists:
+                        topic_lists[name].append("SERVER:" + message)
+
                 # Mostra no console todas as mensagens de um tópico
-                if "print" in cmd:
+                if cmd[:5] == "print":
                     _, name = cmd.split(" ", 1)
                     for message in topic_lists[name]:
                         print(message)
